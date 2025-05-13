@@ -11,7 +11,7 @@ The game is structured around repeating the same day (similar to a time loop). E
 
 2.Branching Storylines & Choices
 ---------------------------------
-The game heavily emphasizes player choice. Talking to different characters and choosing different options can drastically change the outcomes of each day.
+The game heavily changes on player choice. Talking to different characters and choosing different options can drastically change the outcomes of each day.
 
 3.Puzzle & Quest System
 ---------------------------------
@@ -27,7 +27,7 @@ Each character has a unique storyline or quest, and you can usually only complet
 
 6.Item-Based Progression
 ---------------------------------
-Some events or endings can only be unlocked with specific items obtained on previous days, creating a kind of metagame progression.
+Some items can help you on diffrent occasions so its good to memorize where whcih item is, or how to get it.
 
 
 
