@@ -1,7 +1,7 @@
 # zaverecny-projekt
-Idea for my game comes from game called Kindergarten.
-Game will be 2D pixel art style game.
-Core Gameplay Elements of my game in pygame:
+#Idea for my game comes from game called Kindergarten.
+#Game will be 2D pixel art style game.
+#Core Gameplay Elements of my game in pygame:
 
 1.Daily Loop Structure
 ---------------------------------
