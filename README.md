@@ -28,3 +28,7 @@ Each character has a unique storyline or quest, and you can usually only complet
 6.Item-Based Progression
 ---------------------------------
 Some events or endings can only be unlocked with specific items obtained on previous days, creating a kind of metagame progression.
+
+
+
+
