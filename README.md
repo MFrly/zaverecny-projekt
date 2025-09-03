@@ -29,6 +29,9 @@ Each character has a unique storyline or quest, and you can usually only complet
 ---------------------------------
 Some items can help you on diffrent occasions so its good to memorize where whcih item is, or how to get it.
 
+7.Cooperation gameplay
+---------------------------------
+The final element of this game should be coop-mode, that means that you could play with another player so your game could be funnier.
 
 
 
