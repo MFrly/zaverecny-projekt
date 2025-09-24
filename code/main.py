@@ -1,6 +1,6 @@
 from settings import *
 from player import Player
-from npc import NPC  # Importujeme NPC z nového souboru
+from npc import NPC  
 from sprites import *
 from pytmx.util_pygame import load_pygame
 from groups import AllSprites
@@ -74,4 +74,5 @@ class Game:
 
 if __name__ == '__main__':
     game = Game()
+
     game.run()
