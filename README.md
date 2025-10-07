@@ -1,37 +1,78 @@
-# zaverecny-projekt
-Idea for my game comes from game called Kindergarten.
+🎮 Zaverecny Projekt — Kindergarten-Inspired 2D Game
+💡 Concept
 
-Game will be 2D pixel art style game.
+This game takes inspiration from the Kindergarten series and reimagines it as a 2D pixel-art adventure built with Pygame.
+The world may look cute and innocent, but it hides a darkly humorous and twisted reality.
 
-Core Gameplay Elements of my game in pygame:
+🕹️ Core Gameplay Elements
+🕓 1. Daily Loop Structure
 
-1.Daily Loop Structure
----------------------------------
-The game is structured around repeating the same day (similar to a time loop). Each day offers new possibilities depending on the player's choices.
+Each in-game day resets like a time loop, offering new opportunities based on your actions.
+Players can experiment with different paths to uncover new storylines and endings.
 
-2.Branching Storylines & Choices
----------------------------------
-The game heavily changes on player choice. Talking to different characters and choosing different options can drastically change the outcomes of each day.
+🌳 2. Branching Storylines & Player Choices
 
-3.Puzzle & Quest System
----------------------------------
-Many actions are like mini-quests. You need to gather items, talk to specific people in the right order, and solve logic-based puzzles to progress.
+Your decisions truly matter — who you talk to, what you say, and what you do will shape how each day unfolds.
+Different choices can lead to wildly different outcomes.
 
-4.Dark Humor & Tone
----------------------------------
-Despite the childlike setting, the tone is dark and satirical. It deals with adult themes through absurd scenarios.
+🧩 3. Puzzle & Quest System
 
-5.Character-Focused Progression
----------------------------------
-Each character has a unique storyline or quest, and you can usually only complete one or two per day. This encourages replayability.
+Progress through a variety of mini-quests and logic puzzles.
+You’ll need to collect items, talk to the right characters, and perform actions in the right order to advance.
 
-6.Item-Based Progression
----------------------------------
-Some items can help you on diffrent occasions so its good to memorize where whcih item is, or how to get it.
 
-7.Cooperation gameplay
----------------------------------
-The final element of this game should be coop-mode, that means that you could play with another player so your game could be funnier.
+🎒 4. Item-Based Progression
+
+Items are key to success. Some can be reused or have hidden purposes that unlock new interactions or secret endings on later days.
+
+🤝 5. Cooperative Gameplay
+
+The final planned feature is a co-op mode, allowing two players to experience the chaos together for extra fun and creativity.
+
+⚙️ Installation & Setup
+
+Follow these steps to run the game locally:
+
+1️⃣ Clone the repository
+git clone https://github.com/<your-username>/<your-repo-name>.git
+cd <your-repo-name>
+
+2️⃣ Create a virtual environment
+python -m venv venv
+
+3️⃣ Activate the virtual environment
+
+Windows:
+
+venv\Scripts\activate
+
+
+macOS / Linux:
+
+source venv/bin/activate
+
+4️⃣ Install dependencies
+pip install -r requirements.txt
+
+5️⃣ Run the game
+python code/main.py
+
+🧰 Built With
+
+Python 3.11
+
+pygame-ce — game engine
+
+pytmx — map and tile loading
+
+pygame-gui — user interface system
+
+📜 License
+
+This project is for educational purposes.
+
+
+
 
 
 
