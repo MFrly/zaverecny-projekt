@@ -37,10 +37,26 @@ A planned feature is **co-op mode**, allowing two players to experience the chao
 ---
 
 ## ⚙️ Installation & Setup
+Firstly be sure that you have python installed in your coding enviroment.
 
 Follow these steps to run the game locally:
 
 ### 1️⃣ Clone the repository
 ```bash
-git clone https://github.com/<your-username>/<your-repo-name>.git
+git clone https://github.com/MFrly/zaverecny-projekt.git
 cd <your-repo-name>
+```
+### 2️⃣ Create a virtual environment
+```bash
+python -m venv venv
+```
+
+### 3️⃣ Activate the virtual environment
+```bash
+venv\Scripts\activate
+```
+
+### 4️⃣ Install dependencies
+```bash
+pip install -r requirements.txt
+```
