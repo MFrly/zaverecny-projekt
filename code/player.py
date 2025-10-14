@@ -1,22 +1,30 @@
+# player.py
 from settings import * 
 
 class Player(pygame.sprite.Sprite):
     def __init__(self, pos, groups, collision_sprites):
         super().__init__(groups)
         self.image = pygame.image.load(join('images', 'player', 'down', '0.png')).convert_alpha()
-        self.rect = self.image.get_rect(center = pos)
+        self.rect = self.image.get_rect(center=pos)
         self.hitbox_rect = self.rect.inflate(-60, -60)
-    
-        # movement 
+
         self.direction = pygame.Vector2()
         self.speed = 500
         self.collision_sprites = collision_sprites
+
+        self.input_enabled = True  # NEW
+
+    def set_input_enabled(self, enabled: bool):  # NEW
+        self.input_enabled = enabled
+        if not enabled:
+            self.direction.update(0, 0)
 
     def input(self):
         keys = pygame.key.get_pressed()
         self.direction.x = int(keys[pygame.K_RIGHT]) - int(keys[pygame.K_LEFT])
         self.direction.y = int(keys[pygame.K_DOWN]) - int(keys[pygame.K_UP])
-        self.direction = self.direction.normalize() if self.direction else self.direction
+        if self.direction.length_squared() > 0:
+            self.direction = self.direction.normalize()
 
     def move(self, dt):
         self.hitbox_rect.x += self.direction.x * self.speed * dt
@@ -36,5 +44,6 @@ class Player(pygame.sprite.Sprite):
                     if self.direction.y > 0: self.hitbox_rect.bottom = sprite.rect.top
 
     def update(self, dt):
-        self.input()
-        self.move(dt)
+        if self.input_enabled:   # NEW
+            self.input()
+            self.move(dt)
