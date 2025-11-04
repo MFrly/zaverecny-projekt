@@ -1,4 +1,3 @@
-# menu.py
 import pygame
 import pygame_gui
 from settings import *

@@ -6,6 +6,7 @@ from sprites import *
 from pytmx.util_pygame import load_pygame
 from groups import AllSprites
 from menu import run_menu
+from pause_menu import PauseMenu
 import pygame
 import pygame_gui
 
@@ -16,7 +17,7 @@ class Game:
         pygame.display.set_caption('Survivor')
         self.clock = pygame.time.Clock()
         self.running = True
-        self.exit_to_menu = False   # ← signál pro návrat do hlavního menu
+        self.exit_to_menu = False  # signál pro návrat do hlavního menu
 
         # GUI
         self.manager = pygame_gui.UIManager((WINDOW_WIDTH, WINDOW_HEIGHT))
@@ -25,23 +26,15 @@ class Game:
         self.submit_button = None
         self.popup_active = False
 
-        # Pauza
-        self.paused = False
-        self.pause_window = None
-        self.btn_resume = None
-        self.btn_coop = None
-        self.btn_menu = None
-        self.btn_quit = None
-        self.coop_window = None
-        self.btn_host = None
-        self.btn_join = None
+        # Pauza (nově přes PauseMenu)
+        self.pause = PauseMenu(self.manager)
 
-        # groups
+        # groups 
         self.all_sprites = AllSprites()
         self.collision_sprites = pygame.sprite.Group()
         self.npc_sprites = pygame.sprite.Group()
 
-        # pomocný font (hinty)
+        # font pro hinty
         self.font = pygame.font.SysFont(None, 24)
 
         self.setup()
@@ -113,7 +106,7 @@ class Game:
             self.close_dialog()
 
     def draw_interact_hint(self):
-        if self.popup_active or self.paused:
+        if self.popup_active or self.pause.is_open():
             return
         npc = self.player_near_npc()
         if npc:
@@ -122,112 +115,6 @@ class Game:
                    npc.rect.top - 10 - text_surf.get_height())
             offset_pos = (pos[0] + self.all_sprites.offset.x, pos[1] + self.all_sprites.offset.y)
             self.display_surface.blit(text_surf, offset_pos)
-
-    # ====== Pauza (ESC) ======
-    def open_pause_menu(self):
-        if self.paused:
-            return
-        self.paused = True
-        self.player.set_input_enabled(False)
-
-        self.pause_window = pygame_gui.elements.UIWindow(
-            rect=pygame.Rect(WINDOW_WIDTH//2 - 220, WINDOW_HEIGHT//2 - 160, 440, 320),
-            manager=self.manager, window_display_title="Pauza", resizable=False
-        )
-        self.btn_resume = pygame_gui.elements.UIButton(
-            relative_rect=pygame.Rect(30, 40, 380, 40),
-            text="Pokračovat",
-            manager=self.manager, container=self.pause_window
-        )
-        self.btn_coop = pygame_gui.elements.UIButton(
-            relative_rect=pygame.Rect(30, 100, 380, 40),
-            text="Co-op",
-            manager=self.manager, container=self.pause_window
-        )
-        self.btn_menu = pygame_gui.elements.UIButton(
-            relative_rect=pygame.Rect(30, 160, 380, 40),
-            text="Hlavní menu",
-            manager=self.manager, container=self.pause_window
-        )
-        self.btn_quit = pygame_gui.elements.UIButton(
-            relative_rect=pygame.Rect(30, 220, 380, 40),
-            text="Konec",
-            manager=self.manager, container=self.pause_window
-        )
-
-    def close_pause_menu(self):
-        self.paused = False
-        self.player.set_input_enabled(True)
-
-        # zavřít případné co-op okno
-        if self.coop_window is not None:
-            self.coop_window.kill()
-            self.coop_window = None
-            self.btn_host = None
-            self.btn_join = None
-
-        if self.pause_window is not None:
-            self.pause_window.kill()
-            self.pause_window = None
-        self.btn_resume = self.btn_coop = self.btn_menu = self.btn_quit = None
-
-    def open_coop_submenu(self, parent_window):
-        if self.coop_window is None:
-            self.coop_window = pygame_gui.elements.UIWindow(
-                rect=pygame.Rect(parent_window.rect.left + 20, parent_window.rect.top + 20, 400, 220),
-                manager=self.manager, window_display_title="Co-op", resizable=False
-            )
-            pygame_gui.elements.UILabel(
-                relative_rect=pygame.Rect(20, 20, 360, 30),
-                text="Vyber režim:",
-                manager=self.manager, container=self.coop_window
-            )
-            self.btn_host = pygame_gui.elements.UIButton(
-                relative_rect=pygame.Rect(20, 70, 160, 40),
-                text="Host",
-                manager=self.manager, container=self.coop_window
-            )
-            self.btn_join = pygame_gui.elements.UIButton(
-                relative_rect=pygame.Rect(200, 70, 160, 40),
-                text="Join",
-                manager=self.manager, container=self.coop_window
-            )
-            pygame_gui.elements.UILabel(
-                relative_rect=pygame.Rect(20, 130, 360, 70),
-                text="<font size=2>Implementaci přidáme později. Tohle je jen UI.</font>",
-                manager=self.manager, container=self.coop_window
-            )
-
-    def handle_pause_event(self, event):
-        # kliknutí na hlavní pauzovací menu
-        if event.type == pygame_gui.UI_BUTTON_PRESSED and self.pause_window is not None:
-            if event.ui_element == self.btn_resume:
-                self.close_pause_menu()
-            elif event.ui_element == self.btn_coop:
-                self.open_coop_submenu(self.pause_window)
-            elif event.ui_element == self.btn_menu:
-                # návrat do hlavního menu
-                self.running = False
-                self.exit_to_menu = True
-            elif event.ui_element == self.btn_quit:
-                # ukončit hru úplně
-                self.running = False
-                self.exit_to_menu = False
-
-        # kliknutí v co-op sub-okně
-        if self.coop_window is not None and event.type == pygame_gui.UI_BUTTON_PRESSED:
-            if event.ui_element == self.btn_host:
-                print("CO-OP: HOST (placeholder)")
-            elif event.ui_element == self.btn_join:
-                print("CO-OP: JOIN (placeholder)")
-
-        # zavření oken křížkem
-        if event.type == pygame_gui.UI_WINDOW_CLOSE:
-            if event.ui_element == self.coop_window:
-                self.coop_window.kill(); self.coop_window = None; self.btn_host = None; self.btn_join = None
-            elif event.ui_element == self.pause_window:
-                # zavření hlavního pauz okna = pokračovat
-                self.close_pause_menu()
 
     # ====== Main loop ======
     def run(self):
@@ -240,34 +127,56 @@ class Game:
                     self.exit_to_menu = False
 
                 if event.type == pygame.KEYDOWN:
-                    if event.key == pygame.K_e and not self.paused:
+                    if event.key == pygame.K_e and not self.pause.is_open():
                         self.check_npc_interaction()
                     if event.key == pygame.K_ESCAPE:
-                        if self.paused:
-                            self.close_pause_menu()
+                        if self.pause.is_open():
+                            # stejné jako resume
+                            self.pause.close()
+                            self.player.set_input_enabled(True)
                         else:
-                            self.open_pause_menu()
+                            self.pause.open()
+                            self.player.set_input_enabled(False)
 
+                # nejdřív necháme UI manager zpracovat event
                 self.manager.process_events(event)
 
+                # pokud je otevřené dialogové okno, řeš jeho eventy
                 if self.popup_active:
                     self.handle_popup(event)
-                if self.paused:
-                    self.handle_pause_event(event)
+
+                # pokud je otevřené pause menu, předej mu eventy a reaguj na akci
+                if self.pause.is_open():
+                    action = self.pause.process_event(event)
+                    if action == "resume":
+                        self.pause.close()
+                        self.player.set_input_enabled(True)
+                    elif action == "coop_host":
+                        print("CO-OP: HOST (placeholder)")
+                    elif action == "coop_join":
+                        print("CO-OP: JOIN (placeholder)")
+                    elif action == "menu":
+                        self.running = False
+                        self.exit_to_menu = True
+                    elif action == "quit":
+                        self.running = False
+                        self.exit_to_menu = False
 
             # UPDATE
-            if not self.paused and not self.popup_active:
+            if not self.pause.is_open() and not self.popup_active:
                 self.all_sprites.update(dt)
             self.manager.update(dt)
 
             # DRAW
             self.display_surface.fill('black')
-            # Kamera i při pauze drží hráče uprostřed
-            self.all_sprites.draw(getattr(self.player, 'rect', pygame.Rect(0,0,0,0)).center if hasattr(self, 'player') else (0,0))
-            if not self.paused:
+            self.all_sprites.draw(self.player.rect.center)
+            if not self.pause.is_open():
                 self.draw_interact_hint()
-            self.manager.draw_ui(self.display_surface)
 
+            # poloprůhledné ztmavení pod pauzou
+            self.pause.draw_overlay(self.display_surface)
+
+            self.manager.draw_ui(self.display_surface)
             pygame.display.update()
 
         pygame.quit()
@@ -280,10 +189,7 @@ if __name__ == '__main__':
         choice = run_menu()
         if choice in ('quit', None):
             break
-        # single / co-op volby zatím spouští stejnou hru
         game = Game()
         game.run()
         if not game.exit_to_menu:
-            # hráč zvolil „Konec“ ve hře → skončit appku
             running = False
-
