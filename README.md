@@ -60,3 +60,8 @@ venv\Scripts\activate
 ```bash
 pip install -r requirements.txt
 ```
+
+## ⚙️ PROGRES
+Finally somewhat figured out coop. Thanks to few tutorials I used socket.io instead of the usuall tcp and udp to send information to server.
+I´m not completly sure if my coop works for two players, but when trying to host one server for only one player IT WORKED.
+Next step is to try and activate code on another device to see if my coop gameplay truly works.
