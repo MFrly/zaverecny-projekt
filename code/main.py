@@ -7,8 +7,13 @@ from pytmx.util_pygame import load_pygame
 from groups import AllSprites
 from menu import run_menu
 from pause_menu import PauseMenu
+from remote_player import RemotePlayer
+from net_socketio import CoopServer, CoopClient
+
 import pygame
 import pygame_gui
+import time
+
 
 class Game:
     def __init__(self):
@@ -26,38 +31,92 @@ class Game:
         self.submit_button = None
         self.popup_active = False
 
-        # Pauza (nově přes PauseMenu)
+        # Pauza (oddělené menu)
         self.pause = PauseMenu(self.manager)
 
-        # groups 
+        # Skupiny
         self.all_sprites = AllSprites()
         self.collision_sprites = pygame.sprite.Group()
         self.npc_sprites = pygame.sprite.Group()
 
-        # font pro hinty
+        # Font pro hinty
         self.font = pygame.font.SysFont(None, 24)
+
+        # Síť (Socket.IO)
+        self.server = None                 # CoopServer (jen když hostuji)
+        self.client = None                 # CoopClient (host i join)
+        self.remote_players = {}           # pid -> RemotePlayer
+        self.last_send = 0.0
+        self.send_rate = 1 / 15            # posílání pozice ~15×/s
 
         self.setup()
 
+    # ---------- svět / mapa ----------
     def setup(self):
-        map = load_pygame(join('data', 'maps', 'world.tmx'))
+        tmx = load_pygame(join('data', 'maps', 'world.tmx'))
 
-        for x, y, image in map.get_layer_by_name('Ground').tiles():
+        for x, y, image in tmx.get_layer_by_name('Ground').tiles():
             Sprite((x * TILE_SIZE, y * TILE_SIZE), image, self.all_sprites)
 
-        for obj in map.get_layer_by_name('Objects'):
+        for obj in tmx.get_layer_by_name('Objects'):
             CollisionSprite((obj.x, obj.y), obj.image, (self.all_sprites, self.collision_sprites))
 
-        for obj in map.get_layer_by_name('Collisions'):
+        for obj in tmx.get_layer_by_name('Collisions'):
             CollisionSprite((obj.x, obj.y), pygame.Surface((obj.width, obj.height)), self.collision_sprites)
 
-        for obj in map.get_layer_by_name('Entities'):
+        for obj in tmx.get_layer_by_name('Entities'):
             if obj.name == 'Player':
                 self.player = Player((obj.x, obj.y), self.all_sprites, self.collision_sprites)
                 npc_position = (obj.x, obj.y + 150)
                 self.npc = NPC(npc_position, (self.all_sprites, self.npc_sprites))
 
-    # ====== NPC interakce ======
+    # ---------- síť: pomocné ----------
+    def _net_shutdown(self):
+        if self.client:
+            self.client.stop()
+            self.client = None
+        # server běží v daemon vlákně, explicitní stop není nutný (ukončí se s procesem)
+        self.remote_players.clear()
+
+    def _net_tick(self):
+        """Přijmi stavy ostatních hráčů a pošli vlastní pozici."""
+        # Příjem
+        if self.client:
+            for msg in self.client.get_messages():
+                if msg.get("type") == "state":
+                    players = msg.get("players", [])
+                    my_id = self.client.player_id
+                    alive = set()
+
+                    for p in players:
+                        pid = p.get("id")
+                        if pid is None:
+                            continue
+                        alive.add(pid)
+                        # vynech vlastní entitu (tu máš lokálně jako Player)
+                        if my_id is not None and pid == my_id:
+                            continue
+
+                        x, y = int(p.get("x", 0)), int(p.get("y", 0))
+                        if pid not in self.remote_players:
+                            self.remote_players[pid] = RemotePlayer(pid, (x, y), self.all_sprites)
+                        else:
+                            self.remote_players[pid].set_pos(x, y)
+
+                    # Odstranění hráčů, kteří zmizeli
+                    for pid in list(self.remote_players.keys()):
+                        if pid not in alive or (my_id is not None and pid == my_id):
+                            self.remote_players[pid].kill()
+                            del self.remote_players[pid]
+
+        # Odeslání mojí pozice
+        if self.client and hasattr(self, "player"):
+            now = time.time()
+            if now - self.last_send >= self.send_rate:
+                self.last_send = now
+                self.client.send_pos(self.player.rect.centerx, self.player.rect.centery)
+
+    # ---------- NPC interakce ----------
     def player_near_npc(self):
         for npc in self.npc_sprites:
             if self.player.hitbox_rect.colliderect(npc.hitbox_rect):
@@ -76,15 +135,15 @@ class Game:
 
         self.dialog_box = pygame_gui.elements.UITextBox(
             "Ahoj! Mám pro tebe otázku: Kolik je 1+1?",
-            pygame.Rect((WINDOW_WIDTH//2 - 180, WINDOW_HEIGHT//2 - 110), (360, 80)),
+            pygame.Rect((WINDOW_WIDTH // 2 - 180, WINDOW_HEIGHT // 2 - 110), (360, 80)),
             self.manager
         )
         self.text_entry = pygame_gui.elements.UITextEntryLine(
-            relative_rect=pygame.Rect((WINDOW_WIDTH//2 - 100, WINDOW_HEIGHT//2 - 10), (200, 40)),
+            relative_rect=pygame.Rect((WINDOW_WIDTH // 2 - 100, WINDOW_HEIGHT // 2 - 10), (200, 40)),
             manager=self.manager
         )
         self.submit_button = pygame_gui.elements.UIButton(
-            relative_rect=pygame.Rect((WINDOW_WIDTH//2 - 50, WINDOW_HEIGHT//2 + 40), (100, 36)),
+            relative_rect=pygame.Rect((WINDOW_WIDTH // 2 - 50, WINDOW_HEIGHT // 2 + 40), (100, 36)),
             text='Odeslat',
             manager=self.manager
         )
@@ -92,17 +151,17 @@ class Game:
     def close_dialog(self):
         self.popup_active = False
         self.player.set_input_enabled(True)
-        if self.text_entry: self.text_entry.kill(); self.text_entry = None
-        if self.submit_button: self.submit_button.kill(); self.submit_button = None
-        if self.dialog_box: self.dialog_box.kill(); self.dialog_box = None
+        if self.text_entry:
+            self.text_entry.kill(); self.text_entry = None
+        if self.submit_button:
+            self.submit_button.kill(); self.submit_button = None
+        if self.dialog_box:
+            self.dialog_box.kill(); self.dialog_box = None
 
     def handle_popup(self, event):
         if event.type == pygame_gui.UI_BUTTON_PRESSED and event.ui_element == self.submit_button:
             answer = self.text_entry.get_text()
-            if answer.strip() == "2":
-                print("Správně! Dobrá práce!")
-            else:
-                print("Špatně, zkus to příště!")
+            print("Správně! Dobrá práce!" if answer.strip() == "2" else "Špatně, zkus to příště!")
             self.close_dialog()
 
     def draw_interact_hint(self):
@@ -111,12 +170,17 @@ class Game:
         npc = self.player_near_npc()
         if npc:
             text_surf = self.font.render("[E] Mluvit", True, (255, 255, 255))
-            pos = (npc.rect.centerx - text_surf.get_width() // 2,
-                   npc.rect.top - 10 - text_surf.get_height())
-            offset_pos = (pos[0] + self.all_sprites.offset.x, pos[1] + self.all_sprites.offset.y)
+            pos = (
+                npc.rect.centerx - text_surf.get_width() // 2,
+                npc.rect.top - 10 - text_surf.get_height()
+            )
+            offset_pos = (
+                int(pos[0] + self.all_sprites.offset.x),
+                int(pos[1] + self.all_sprites.offset.y)
+            )
             self.display_surface.blit(text_surf, offset_pos)
 
-    # ====== Main loop ======
+    # ---------- hlavní smyčka ----------
     def run(self):
         while self.running:
             dt = self.clock.tick(60) / 1000
@@ -129,67 +193,90 @@ class Game:
                 if event.type == pygame.KEYDOWN:
                     if event.key == pygame.K_e and not self.pause.is_open():
                         self.check_npc_interaction()
+
                     if event.key == pygame.K_ESCAPE:
                         if self.pause.is_open():
-                            # stejné jako resume
+                            # stejné jako „Pokračovat“
                             self.pause.close()
                             self.player.set_input_enabled(True)
                         else:
                             self.pause.open()
                             self.player.set_input_enabled(False)
 
-                # nejdřív necháme UI manager zpracovat event
+                # UI manager
                 self.manager.process_events(event)
 
-                # pokud je otevřené dialogové okno, řeš jeho eventy
+                # Dialog okno
                 if self.popup_active:
                     self.handle_popup(event)
 
-                # pokud je otevřené pause menu, předej mu eventy a reaguj na akci
+                # Pauza – zpracuj akce
                 if self.pause.is_open():
                     action = self.pause.process_event(event)
                     if action == "resume":
                         self.pause.close()
                         self.player.set_input_enabled(True)
-                    elif action == "coop_host":
-                        print("CO-OP: HOST (placeholder)")
-                    elif action == "coop_join":
-                        print("CO-OP: JOIN (placeholder)")
+
                     elif action == "menu":
                         self.running = False
                         self.exit_to_menu = True
+
                     elif action == "quit":
                         self.running = False
                         self.exit_to_menu = False
 
-            # UPDATE
+                    elif isinstance(action, tuple):
+                        name, payload = action
+                        if name == "coop_host":
+                            print("CO-OP: HOST – spouštím server i lokální klient")
+                            self._net_shutdown()
+                            self.server = CoopServer(); self.server.start()
+                            time.sleep(0.3)  # krátká prodleva pro start serveru
+                            self.client = CoopClient("http://127.0.0.1:5001"); self.client.start()
+                            self.pause.close(); self.player.set_input_enabled(True)
+
+                        elif name == "coop_join":
+                            ip = payload or "127.0.0.1"
+                            print(f"CO-OP: JOIN {ip}")
+                            self._net_shutdown()
+                            self.client = CoopClient(f"http://{ip}:5001"); self.client.start()
+                            self.pause.close(); self.player.set_input_enabled(True)
+
+            # Síť pouze mimo pauzu a mimo dialog
+            if not self.pause.is_open() and not self.popup_active:
+                self._net_tick()
+
+            # Update světa
             if not self.pause.is_open() and not self.popup_active:
                 self.all_sprites.update(dt)
             self.manager.update(dt)
 
-            # DRAW
+            # Kreslení
             self.display_surface.fill('black')
             self.all_sprites.draw(self.player.rect.center)
             if not self.pause.is_open():
                 self.draw_interact_hint()
 
-            # poloprůhledné ztmavení pod pauzou
+            # Ztmavení pod pauzou
             self.pause.draw_overlay(self.display_surface)
 
             self.manager.draw_ui(self.display_surface)
             pygame.display.update()
 
         pygame.quit()
-        # run() končí, stav návratu je v self.exit_to_menu
+        self._net_shutdown()
 
 
 if __name__ == '__main__':
     running = True
     while running:
-        choice = run_menu()
+        choice = run_menu()  # stávající menu vrací 'start' | 'coop_host' | 'coop_join' | 'quit'
         if choice in ('quit', None):
             break
+
+        # Start hry (Co-op lze spustit kdykoliv z pauzy; tady necháme single)
         game = Game()
         game.run()
+
         if not game.exit_to_menu:
             running = False

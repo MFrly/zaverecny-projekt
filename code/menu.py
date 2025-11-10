@@ -1,162 +1,74 @@
-import pygame
-import pygame_gui
+# menu.py
+import pygame, pygame_gui
 from settings import *
 
-class Star:
-    def __init__(self, w, h):
-        import random
-        self.w, self.h = w, h
-        self.x = random.uniform(0, w)
-        self.y = random.uniform(0, h)
-        self.speed = random.uniform(20, 60)
-        self.size = random.randint(1, 2)
-
-    def update(self, dt):
-        self.y += self.speed * dt
-        if self.y > self.h: self.y = 0
-        self.x += 0.5 * dt
-        if self.x > self.w: self.x = 0
-
-    def draw(self, surf):
-        surf.fill((255, 255, 255), (int(self.x), int(self.y), self.size, self.size))
-
-def draw_vertical_gradient(surf, top_color, bottom_color):
-    h = surf.get_height()
-    for y in range(h):
-        t = y / (h - 1)
-        r = int(top_color[0] * (1 - t) + bottom_color[0] * t)
-        g = int(top_color[1] * (1 - t) + bottom_color[1] * t)
-        b = int(top_color[2] * (1 - t) + bottom_color[2] * t)
-        pygame.draw.line(surf, (r, g, b), (0, y), (surf.get_width(), y))
-
 def run_menu():
-    """
-    Vrací:
-      - 'start'       → singleplayer start
-      - 'coop_host'   → host co-op (zatím placeholder)
-      - 'coop_join'   → join co-op (zatím placeholder)
-      - 'quit'        → ukončit aplikaci
-    """
     pygame.init()
     screen = pygame.display.set_mode((WINDOW_WIDTH, WINDOW_HEIGHT))
     pygame.display.set_caption("Survivor — Menu")
     clock = pygame.time.Clock()
-
     manager = pygame_gui.UIManager((WINDOW_WIDTH, WINDOW_HEIGHT))
 
-    title = pygame_gui.elements.UILabel(
-        relative_rect=pygame.Rect(0, 80, WINDOW_WIDTH, 80),
-        text="<font size=6><b>SURVIVOR</b></font>",
-        manager=manager
-    )
+    btn_w, btn_h = 280, 48
+    title = pygame_gui.elements.UILabel(pygame.Rect(0,80,WINDOW_WIDTH,60), "<font size=6><b>SURVIVOR</b></font>", manager)
+    start_btn = pygame_gui.elements.UIButton(pygame.Rect(WINDOW_WIDTH//2-btn_w//2,220,btn_w,btn_h), "Start", manager)
+    coop_btn  = pygame_gui.elements.UIButton(pygame.Rect(WINDOW_WIDTH//2-btn_w//2,280,btn_w,btn_h), "Co-op", manager)
+    quit_btn  = pygame_gui.elements.UIButton(pygame.Rect(WINDOW_WIDTH//2-btn_w//2,340,btn_w,btn_h), "Konec", manager)
 
-    btn_width, btn_height = 280, 48
-    start_btn = pygame_gui.elements.UIButton(
-        relative_rect=pygame.Rect(WINDOW_WIDTH//2 - btn_width//2, 220, btn_width, btn_height),
-        text="Start",
-        manager=manager
-    )
-    coop_btn = pygame_gui.elements.UIButton(
-        relative_rect=pygame.Rect(WINDOW_WIDTH//2 - btn_width//2, 280, btn_width, btn_height),
-        text="Co-op",
-        manager=manager
-    )
-    quit_btn = pygame_gui.elements.UIButton(
-        relative_rect=pygame.Rect(WINDOW_WIDTH//2 - btn_width//2, 340, btn_width, btn_height),
-        text="Konec",
-        manager=manager
-    )
-    credits = pygame_gui.elements.UILabel(
-        relative_rect=pygame.Rect(0, WINDOW_HEIGHT - 40, WINDOW_WIDTH, 30),
-        text="<font size=2>© 2025 tvoje studio · [E] interakce · [Esc] pauza</font>",
-        manager=manager
-    )
+    coop_win = None
+    host_btn = join_btn = None
+    ip_entry = None
+    connect_btn = None
 
-    # Co-op okno
-    coop_window = None
-    host_btn = None
-    join_btn = None
-
-    starfield = [Star(WINDOW_WIDTH, WINDOW_HEIGHT) for _ in range(120)]
-    bg_surface = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT))
-    fade_surface = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT), pygame.SRCALPHA)
-    fade_alpha = 255
-
+    selection = ("quit", None)
     running = True
-    selection = None
 
     while running:
         dt = clock.tick(60) / 1000
-
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
-                running = False
-                selection = 'quit'
+                selection = ("quit", None); running = False
 
             if event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_RETURN:
-                    selection = 'start'; running = False
+                    selection = ("start", None); running = False
                 if event.key == pygame.K_ESCAPE:
-                    selection = 'quit'; running = False
+                    selection = ("quit", None); running = False
 
             if event.type == pygame_gui.UI_BUTTON_PRESSED:
                 if event.ui_element == start_btn:
-                    selection = 'start'; running = False
+                    selection = ("start", None); running = False
+                elif event.ui_element == quit_btn:
+                    selection = ("quit", None); running = False
                 elif event.ui_element == coop_btn:
-                    if coop_window is None:
-                        coop_window = pygame_gui.elements.UIWindow(
-                            rect=pygame.Rect(WINDOW_WIDTH//2 - 220, WINDOW_HEIGHT//2 - 150, 440, 260),
+                    if coop_win is None:
+                        coop_win = pygame_gui.elements.UIWindow(
+                            rect=pygame.Rect(WINDOW_WIDTH//2-220, WINDOW_HEIGHT//2-160, 440, 320),
                             manager=manager, window_display_title="Co-op", resizable=False
                         )
-                        pygame_gui.elements.UILabel(
-                            relative_rect=pygame.Rect(20, 20, 400, 30),
-                            text="Vyber režim:",
-                            manager=manager, container=coop_window
-                        )
-                        host_btn = pygame_gui.elements.UIButton(
-                            relative_rect=pygame.Rect(20, 70, 180, 40),
-                            text="Host (vytvořit hru)",
-                            manager=manager, container=coop_window
-                        )
-                        join_btn = pygame_gui.elements.UIButton(
-                            relative_rect=pygame.Rect(220, 70, 180, 40),
-                            text="Join (připojit se)",
-                            manager=manager, container=coop_window
-                        )
-                        pygame_gui.elements.UILabel(
-                            relative_rect=pygame.Rect(20, 130, 400, 100),
-                            text="<font size=2>Co-op implementujeme později. Tohle je jen UI.</font>",
-                            manager=manager, container=coop_window
-                        )
-                elif coop_window is not None and event.ui_element == host_btn:
-                    selection = 'coop_host'; running = False
-                elif coop_window is not None and event.ui_element == join_btn:
-                    selection = 'coop_join'; running = False
-                elif event.ui_element == quit_btn:
-                    selection = 'quit'; running = False
+                        host_btn = pygame_gui.elements.UIButton(pygame.Rect(20,40,180,40), "Host", manager, container=coop_win)
+                        join_btn = pygame_gui.elements.UIButton(pygame.Rect(220,40,180,40), "Join", manager, container=coop_win)
+                        pygame_gui.elements.UILabel(pygame.Rect(20,100,400,30), "IP adresa serveru (pro Join):", manager, container=coop_win)
+                        ip_entry = pygame_gui.elements.UITextEntryLine(pygame.Rect(20,130,380,36), manager, container=coop_win)
+                        ip_entry.set_text("127.0.0.1")
+                        connect_btn = pygame_gui.elements.UIButton(pygame.Rect(20,180,380,40), "Připojit (Join)", manager, container=coop_win)
 
-            if event.type == pygame_gui.UI_WINDOW_CLOSE and coop_window is not None:
-                if event.ui_element == coop_window:
-                    coop_window.kill(); coop_window = None; host_btn = None; join_btn = None
+                elif coop_win is not None and event.ui_element == host_btn:
+                    selection = ("coop_host", None); running = False
+                elif coop_win is not None and (event.ui_element == join_btn or event.ui_element == connect_btn):
+                    ip = ip_entry.get_text().strip() if ip_entry else "127.0.0.1"
+                    selection = ("coop_join", ip); running = False
+
+            if event.type == pygame_gui.UI_WINDOW_CLOSE and coop_win is not None:
+                if event.ui_element == coop_win:
+                    coop_win.kill(); coop_win = None
+                    host_btn = join_btn = ip_entry = connect_btn = None
 
             manager.process_events(event)
 
-        for s in starfield: s.update(dt)
         manager.update(dt)
-
-        if fade_alpha > 0:
-            fade_alpha = max(0, fade_alpha - 600 * dt)
-
-        draw_vertical_gradient(bg_surface, (9, 11, 25), (24, 29, 54))
-        for s in starfield: s.draw(bg_surface)
-
-        screen.blit(bg_surface, (0, 0))
+        screen.fill((15,18,32))
         manager.draw_ui(screen)
-
-        if fade_alpha > 0:
-            fade_surface.fill((0, 0, 0, int(fade_alpha)))
-            screen.blit(fade_surface, (0, 0))
-
         pygame.display.update()
 
-    return selection or 'quit'
+    return selection
