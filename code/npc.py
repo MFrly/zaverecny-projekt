@@ -2,8 +2,9 @@
 from settings import *
 
 class NPC(pygame.sprite.Sprite):
-    def __init__(self, pos, groups):
+    def __init__(self, pos, groups, npc_id):
         super().__init__(groups)
+        self.npc_id = npc_id
         self.image = pygame.image.load(join('images', 'player', 'down', '0.png')).convert_alpha()
         self.rect = self.image.get_rect(center=pos)
         # zmenšit hitbox ~ o 40 % v obou osách

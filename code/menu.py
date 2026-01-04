@@ -1,4 +1,6 @@
 # menu.py
+print("MENU IMPORT PATH:", __file__)
+
 import pygame, pygame_gui
 from settings import *
 
@@ -8,12 +10,18 @@ def run_menu():
     pygame.display.set_caption("Survivor — Menu")
     clock = pygame.time.Clock()
     manager = pygame_gui.UIManager((WINDOW_WIDTH, WINDOW_HEIGHT))
+    
 
     btn_w, btn_h = 280, 48
     title = pygame_gui.elements.UILabel(pygame.Rect(0,80,WINDOW_WIDTH,60), "<font size=6><b>SURVIVOR</b></font>", manager)
     start_btn = pygame_gui.elements.UIButton(pygame.Rect(WINDOW_WIDTH//2-btn_w//2,220,btn_w,btn_h), "Start", manager)
     coop_btn  = pygame_gui.elements.UIButton(pygame.Rect(WINDOW_WIDTH//2-btn_w//2,280,btn_w,btn_h), "Co-op", manager)
     quit_btn  = pygame_gui.elements.UIButton(pygame.Rect(WINDOW_WIDTH//2-btn_w//2,340,btn_w,btn_h), "Konec", manager)
+    name_entry = pygame_gui.elements.UITextEntryLine(
+    relative_rect=pygame.Rect(WINDOW_WIDTH//2 - 140, 170, 280, 40),
+    manager=manager)
+    name_entry.set_text("Hráč")
+
 
     coop_win = None
     host_btn = join_btn = None
@@ -71,4 +79,8 @@ def run_menu():
         manager.draw_ui(screen)
         pygame.display.update()
 
-    return selection
+    return {
+    "action": selection,
+    "player_name": name_entry.get_text().strip() or "Hráč"
+}
+

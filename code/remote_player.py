@@ -16,9 +16,10 @@ def _img():
     return _REMOTE_IMG
 
 class RemotePlayer(pygame.sprite.Sprite):
-    def __init__(self, player_id, pos, groups):
+    def __init__(self, player_id, pos, groups, name =None):
         super().__init__(groups)
         self.player_id = player_id
+        self.name = name or f"Player {player_id}"
         self.image = _img()
         self.rect = self.image.get_rect(center=(int(pos[0]), int(pos[1])))
         self.hitbox_rect = self.rect.inflate(-60, -60)

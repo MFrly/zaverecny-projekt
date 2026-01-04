@@ -2,7 +2,7 @@
 from settings import * 
 
 class Player(pygame.sprite.Sprite):
-    def __init__(self, pos, groups, collision_sprites):
+    def __init__(self, pos, groups, collision_sprites,name="Ty"):
         super().__init__(groups)
         self.image = pygame.image.load(join('images', 'player', 'down', '0.png')).convert_alpha()
         self.rect = self.image.get_rect(center=pos)
@@ -13,6 +13,7 @@ class Player(pygame.sprite.Sprite):
         self.collision_sprites = collision_sprites
 
         self.input_enabled = True  # NEW
+        self.name = name 
 
     def set_input_enabled(self, enabled: bool):  # NEW
         self.input_enabled = enabled
