@@ -61,7 +61,47 @@ venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-## ⚙️ PROGRES
-Finally somewhat figured out coop. Thanks to few tutorials I used socket.io instead of the usuall tcp and udp to send information to server.
-I´m not completly sure if my coop works for two players, but when trying to host one server for only one player IT WORKED.
-Next step is to try and activate code on another device to see if my coop gameplay truly works.
+## ⚙️⚙️ Project Progress
+
+The project is currently in an active development phase.
+Most of the core singleplayer mechanics are already implemented and working, including player movement, basic interactions, item collection and NPC dialogue system.
+
+## 🎮 Current State
+
+The game world is functional and can be freely explored
+
+Player movement, collisions and camera system are implemented
+
+Item-based progression (key parts) works correctly
+
+NPC dialogue system reacts dynamically to player progress
+
+## 🌐 Multiplayer / Co-op Progress
+
+One of the main goals of the project is to support cooperative gameplay.
+After experimenting with classic TCP/UDP communication, the project now uses Socket.IO for network communication.
+
+Current multiplayer state:
+
+Basic server–client architecture is implemented
+
+Player position synchronization works in local testing
+
+Hosting a server for a single player works correctly
+
+Remote player entities are created and updated dynamically
+
+At this stage, the multiplayer system has been successfully tested on one device.
+The next planned step is to test the co-op functionality across multiple devices on the same network to verify real two-player synchronization.
+
+## 🔜 Planned Improvements
+
+Full multiplayer testing on multiple computers
+
+Improved synchronization (animations, states, interactions)
+
+Shared item interactions in co-op mode
+
+Additional story branches and endings
+
+Polishing UI and player feedback
