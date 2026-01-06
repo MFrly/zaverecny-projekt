@@ -37,6 +37,22 @@ class DialogSystem:
         self.dialog_index = 0
         self._show_dialog_line()
 
+    def start_custom_dialog(self, player, lines):
+        """Spustí dialog z libovolného seznamu vět (ne z NPC_DIALOGUES)."""
+        self.popup_active = True
+        player.set_input_enabled(False)
+
+        self.current_npc = None
+        self.active_dialogue = list(lines) if lines else []
+
+        if not self.active_dialogue:
+            self.end_dialog(player)
+            return
+
+        self.dialog_index = 0
+        self._show_dialog_line()
+
+
     def next_dialog(self, player):
         self.dialog_index += 1
         if not self.active_dialogue or self.dialog_index >= len(self.active_dialogue):

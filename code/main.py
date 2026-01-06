@@ -2,7 +2,7 @@
 from settings import *
 from player import Player
 from npc import NPC
-from sprites import *  # očekává: Sprite, CollisionSprite, KeyPart
+from sprites import *  # Sprite, CollisionSprite, KeyPart
 from pytmx.util_pygame import load_pygame
 from groups import AllSprites
 from menu import run_menu
@@ -19,7 +19,7 @@ class Game:
     def __init__(self, player_name="Hráč"):
         pygame.init()
         self.display_surface = pygame.display.set_mode((WINDOW_WIDTH, WINDOW_HEIGHT))
-        pygame.display.set_caption('Survivor')
+        pygame.display.set_caption("Survivor")
         self.clock = pygame.time.Clock()
         self.running = True
         self.exit_to_menu = False
@@ -29,7 +29,7 @@ class Game:
         self.manager = pygame_gui.UIManager((WINDOW_WIDTH, WINDOW_HEIGHT))
         self.pause = PauseMenu(self.manager)
 
-        # Skupiny (POZOR: nedělej AllSprites 2x)
+        # Skupiny
         self.all_sprites = AllSprites()
         self.collision_sprites = pygame.sprite.Group()
         self.item_sprites = pygame.sprite.Group()
@@ -43,7 +43,7 @@ class Game:
         self.font = pygame.font.SysFont(None, 24)
         self.name_font = pygame.font.SysFont(None, 20)
 
-        # Assety (klíče)
+        # Asset klíče (fallback když nenajde soubor)
         self.key_img = self.load_key_image()
 
         # Svět
@@ -52,89 +52,120 @@ class Game:
     # ---------- assety ----------
     def load_key_image(self) -> pygame.Surface:
         """
-        Zkusí načíst obrázek klíče. Když soubor neexistuje, vytvoří náhradní Surface,
-        aby hra nespadla a klíče šly aspoň testovat.
+        Zkusí načíst obrázek klíče. Když soubor neexistuje,
+        vytvoří náhradní Surface, aby šlo testovat.
         """
-        # UPRAV si cestu podle toho, kde obrázek opravdu máš:
-        path = join('data', 'images', 'items', 'key_part.png')
+        path = join("data", "graphics", "items", "key_part.png")
         try:
-            surf = pygame.image.load(path).convert_alpha()
-            return surf
+            return pygame.image.load(path).convert_alpha()
         except Exception:
-            # fallback – žlutý čtverec
             surf = pygame.Surface((24, 24), pygame.SRCALPHA)
             surf.fill((255, 220, 0))
             return surf
 
     # ---------- klíče ----------
     def spawn_keys(self):
-        """
-        Vytvoří 3 části klíče. Tohle se volá JEDNOU v setup().
-        """
-        KeyPart((300, 400), 1, self.key_img, [self.all_sprites, self.item_sprites])
-        KeyPart((900, 250), 2, self.key_img, [self.all_sprites, self.item_sprites])
-        KeyPart((1200, 800), 3, self.key_img, [self.all_sprites, self.item_sprites])
+        """Vytvoří 3 části klíče poblíž hráče (aby nebyly mimo hratelnou část)."""
+        px, py = self.player.rect.center
+
+        positions = [
+            (px - 250, py + 120),  # část 1
+            (px + 300, py - 80),   # část 2
+            (px + 100, py + 320),  # část 3
+        ]
+        for part_id, pos in enumerate(positions, start=1):
+            KeyPart(pos, part_id, self.key_img, [self.all_sprites, self.item_sprites])
+
+        print("Spawned key parts at:", [(k.part_id, k.rect.center) for k in self.item_sprites]) 
 
     def check_key_pickup(self):
-        """
-        Kolize hráče s klíči. Klíče se po sebrání smažou (dokill=True)
-        a uloží se do inventáře hráče.
-        """
+        """Kolize přes player.hitbox_rect (a key.hitbox_rect pokud existuje)."""
         if not hasattr(self, "player"):
             return
 
-        hits = pygame.sprite.spritecollide(self.player, self.item_sprites, dokill=True)
-        if not hits:
-            return
+        for key in list(self.item_sprites):
+            key_hitbox = getattr(key, "hitbox_rect", key.rect)
+            if self.player.hitbox_rect.colliderect(key_hitbox):
+                self.player.key_parts.add(key.part_id)
+                key.kill()
 
-        # inventář na hráči (Set je ideální)
-        if not hasattr(self.player, "keys_collected"):
-            self.player.keys_collected = set()
+    # ---------- NPC text podle klíčů ----------
+    def get_npc_key_dialog_lines(self):
+        have = len(self.player.key_parts)
+        missing = 3 - have
 
-        for item in hits:
-            # čekáme, že KeyPart má atribut part_id (doporučeno níže ve sprites.py)
-            part_id = getattr(item, "part_id", None)
-            if part_id is None:
-                # fallback – když by se to jmenovalo jinak
-                part_id = getattr(item, "id", None)
+        if self.player.has_master_key:
+            return [
+                "Výborně! Klíč je hotový.",
+                "Brána by teď měla jít otevřít. Pokračuj dál."
+            ]
 
-            if part_id is not None:
-                self.player.keys_collected.add(part_id)
+        if have == 0:
+            return [
+                "Temnota se šíří lesem...",
+                "Najdi tři části klíče a vrať se ke mně."
+            ]
+
+        if have < 3:
+            return [
+                f"Už máš {have}/3 části klíče.",
+                f"Ještě ti chybí {missing}."
+            ]
+
+        return [
+            "Skvěle! Máš všechny tři části!",
+            "Spojím je v jeden klíč..."
+        ]
+
+    def try_craft_master_key(self):
+        """Když má hráč 3 části a mluví s NPC, složíme klíč."""
+        if not self.player.has_master_key and len(self.player.key_parts) == 3:
+            self.player.has_master_key = True
+            self.player.key_parts.clear()
 
     # ---------- svět / mapa ----------
     def setup(self):
-        tmx = load_pygame(join('data', 'maps', 'world.tmx'))
+        tmx = load_pygame(join("data", "maps", "world.tmx"))
 
         # Tiles
-        for x, y, image in tmx.get_layer_by_name('Ground').tiles():
+        for x, y, image in tmx.get_layer_by_name("Ground").tiles():
             Sprite((x * TILE_SIZE, y * TILE_SIZE), image, self.all_sprites)
 
         # Objects (kolizní sprity s obrázkem)
-        for obj in tmx.get_layer_by_name('Objects'):
+        for obj in tmx.get_layer_by_name("Objects"):
             CollisionSprite((obj.x, obj.y), obj.image, (self.all_sprites, self.collision_sprites))
 
         # Collisions (neviditelné hitboxy)
-        for obj in tmx.get_layer_by_name('Collisions'):
+        for obj in tmx.get_layer_by_name("Collisions"):
             CollisionSprite((obj.x, obj.y), pygame.Surface((obj.width, obj.height)), self.collision_sprites)
 
         # Entities
-        for obj in tmx.get_layer_by_name('Entities'):
-            if obj.name == 'Player':
+        player_spawned = False
+        for obj in tmx.get_layer_by_name("Entities"):
+            if obj.name == "Player":
+                player_spawned = True
+
                 self.player = Player(
                     (obj.x, obj.y),
                     self.all_sprites,
                     self.collision_sprites,
-                    name=self.player_name
+                    name=self.player_name,
                 )
 
-                # inventář pro klíče (aby to bylo vždy připravené)
-                self.player.keys_collected = set()
+                # jistota (už to máš v Player, ale kdyby něco)
+                if not hasattr(self.player, "key_parts"):
+                    self.player.key_parts = set()
+                if not hasattr(self.player, "has_master_key"):
+                    self.player.has_master_key = False
 
                 npc_position = (obj.x, obj.y + 150)
                 self.npc = NPC(npc_position, (self.all_sprites, self.npc_sprites), npc_id="villager_1")
 
-        # Klíče (po vytvoření hráče, ať hned funguje pickup)
-        self.spawn_keys()
+                # klíče spawn až po hráči (jen jednou)
+                self.spawn_keys()
+
+        if not player_spawned:
+            raise RuntimeError("V layeru 'Entities' chybí objekt s name == 'Player'.")
 
     # ---------- NPC blízkost ----------
     def player_near_npc(self):
@@ -153,11 +184,11 @@ class Game:
             text_surf = self.font.render("[E] Mluvit", True, (255, 255, 255))
             pos = (
                 npc.rect.centerx - text_surf.get_width() // 2,
-                npc.rect.top - 10 - text_surf.get_height()
+                npc.rect.top - 10 - text_surf.get_height(),
             )
             offset_pos = (
                 int(pos[0] + self.all_sprites.offset.x),
-                int(pos[1] + self.all_sprites.offset.y)
+                int(pos[1] + self.all_sprites.offset.y),
             )
             self.display_surface.blit(text_surf, offset_pos)
 
@@ -173,7 +204,7 @@ class Game:
             y = ent.rect.top - text_surf.get_height() - 4
             offset_pos = (
                 int(x + self.all_sprites.offset.x),
-                int(y + self.all_sprites.offset.y)
+                int(y + self.all_sprites.offset.y),
             )
             self.display_surface.blit(text_surf, offset_pos)
 
@@ -193,7 +224,14 @@ class Game:
                         if not self.pause.is_open() and not self.dialog.is_active():
                             npc = self.player_near_npc()
                             if npc:
-                                self.dialog.start_dialog(self.player, npc)
+                                # villager_1: dynamický dialog podle klíčů
+                                if npc.npc_id == "villager_1" and hasattr(self.dialog, "start_custom_dialog"):
+                                    # nejdřív případně slož klíč, pak vyrob text
+                                    self.try_craft_master_key()
+                                    lines = self.get_npc_key_dialog_lines()
+                                    self.dialog.start_custom_dialog(self.player, lines)
+                                else:
+                                    self.dialog.start_dialog(self.player, npc)
 
                     # Enter = další věta dialogu
                     if event.key == pygame.K_RETURN and self.dialog.is_active():
@@ -245,15 +283,14 @@ class Game:
             if not self.pause.is_open() and not self.dialog.is_active():
                 self.net.tick(self.player)
                 self.all_sprites.update(dt)
-
-                #  kontrola sebrání klíčů
                 self.check_key_pickup()
 
             self.manager.update(dt)
 
             # kreslení
-            self.display_surface.fill('black')
+            self.display_surface.fill("black")
             self.all_sprites.draw(self.player.rect.center)
+            
             self.draw_nameplates()
 
             if not self.pause.is_open():
@@ -267,7 +304,7 @@ class Game:
         self.net.shutdown()
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     running = True
     while running:
         choice = run_menu()
@@ -276,7 +313,7 @@ if __name__ == '__main__':
 
         player_name = choice.get("player_name", "Hráč")
         action = choice.get("action")
-        if action in ('quit', None):
+        if action in ("quit", None):
             break
 
         game = Game(player_name)
