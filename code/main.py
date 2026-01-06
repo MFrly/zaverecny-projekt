@@ -2,7 +2,7 @@
 from settings import *
 from player import Player
 from npc import NPC
-from sprites import *
+from sprites import *  # očekává: Sprite, CollisionSprite, KeyPart
 from pytmx.util_pygame import load_pygame
 from groups import AllSprites
 from menu import run_menu
@@ -13,7 +13,6 @@ from network_system import NetworkSystem
 
 import pygame
 import pygame_gui
-import time
 
 
 class Game:
@@ -30,9 +29,10 @@ class Game:
         self.manager = pygame_gui.UIManager((WINDOW_WIDTH, WINDOW_HEIGHT))
         self.pause = PauseMenu(self.manager)
 
-        # Skupiny
+        # Skupiny (POZOR: nedělej AllSprites 2x)
         self.all_sprites = AllSprites()
         self.collision_sprites = pygame.sprite.Group()
+        self.item_sprites = pygame.sprite.Group()
         self.npc_sprites = pygame.sprite.Group()
 
         # Systémy
@@ -43,21 +43,81 @@ class Game:
         self.font = pygame.font.SysFont(None, 24)
         self.name_font = pygame.font.SysFont(None, 20)
 
+        # Assety (klíče)
+        self.key_img = self.load_key_image()
+
+        # Svět
         self.setup()
+
+    # ---------- assety ----------
+    def load_key_image(self) -> pygame.Surface:
+        """
+        Zkusí načíst obrázek klíče. Když soubor neexistuje, vytvoří náhradní Surface,
+        aby hra nespadla a klíče šly aspoň testovat.
+        """
+        # UPRAV si cestu podle toho, kde obrázek opravdu máš:
+        path = join('data', 'images', 'items', 'key_part.png')
+        try:
+            surf = pygame.image.load(path).convert_alpha()
+            return surf
+        except Exception:
+            # fallback – žlutý čtverec
+            surf = pygame.Surface((24, 24), pygame.SRCALPHA)
+            surf.fill((255, 220, 0))
+            return surf
+
+    # ---------- klíče ----------
+    def spawn_keys(self):
+        """
+        Vytvoří 3 části klíče. Tohle se volá JEDNOU v setup().
+        """
+        KeyPart((300, 400), 1, self.key_img, [self.all_sprites, self.item_sprites])
+        KeyPart((900, 250), 2, self.key_img, [self.all_sprites, self.item_sprites])
+        KeyPart((1200, 800), 3, self.key_img, [self.all_sprites, self.item_sprites])
+
+    def check_key_pickup(self):
+        """
+        Kolize hráče s klíči. Klíče se po sebrání smažou (dokill=True)
+        a uloží se do inventáře hráče.
+        """
+        if not hasattr(self, "player"):
+            return
+
+        hits = pygame.sprite.spritecollide(self.player, self.item_sprites, dokill=True)
+        if not hits:
+            return
+
+        # inventář na hráči (Set je ideální)
+        if not hasattr(self.player, "keys_collected"):
+            self.player.keys_collected = set()
+
+        for item in hits:
+            # čekáme, že KeyPart má atribut part_id (doporučeno níže ve sprites.py)
+            part_id = getattr(item, "part_id", None)
+            if part_id is None:
+                # fallback – když by se to jmenovalo jinak
+                part_id = getattr(item, "id", None)
+
+            if part_id is not None:
+                self.player.keys_collected.add(part_id)
 
     # ---------- svět / mapa ----------
     def setup(self):
         tmx = load_pygame(join('data', 'maps', 'world.tmx'))
 
+        # Tiles
         for x, y, image in tmx.get_layer_by_name('Ground').tiles():
             Sprite((x * TILE_SIZE, y * TILE_SIZE), image, self.all_sprites)
 
+        # Objects (kolizní sprity s obrázkem)
         for obj in tmx.get_layer_by_name('Objects'):
             CollisionSprite((obj.x, obj.y), obj.image, (self.all_sprites, self.collision_sprites))
 
+        # Collisions (neviditelné hitboxy)
         for obj in tmx.get_layer_by_name('Collisions'):
             CollisionSprite((obj.x, obj.y), pygame.Surface((obj.width, obj.height)), self.collision_sprites)
 
+        # Entities
         for obj in tmx.get_layer_by_name('Entities'):
             if obj.name == 'Player':
                 self.player = Player(
@@ -67,10 +127,14 @@ class Game:
                     name=self.player_name
                 )
 
-                npc_position = (obj.x, obj.y + 150)
+                # inventář pro klíče (aby to bylo vždy připravené)
+                self.player.keys_collected = set()
 
-                # DŮLEŽITÉ: musí sedět na NPC_DIALOGUES (u tebe je "villager_1")
+                npc_position = (obj.x, obj.y + 150)
                 self.npc = NPC(npc_position, (self.all_sprites, self.npc_sprites), npc_id="villager_1")
+
+        # Klíče (po vytvoření hráče, ať hned funguje pickup)
+        self.spawn_keys()
 
     # ---------- NPC blízkost ----------
     def player_near_npc(self):
@@ -182,12 +246,16 @@ class Game:
                 self.net.tick(self.player)
                 self.all_sprites.update(dt)
 
+                #  kontrola sebrání klíčů
+                self.check_key_pickup()
+
             self.manager.update(dt)
 
             # kreslení
             self.display_surface.fill('black')
             self.all_sprites.draw(self.player.rect.center)
             self.draw_nameplates()
+
             if not self.pause.is_open():
                 self.draw_interact_hint()
 

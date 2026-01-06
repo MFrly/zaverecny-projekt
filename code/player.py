@@ -15,6 +15,9 @@ class Player(pygame.sprite.Sprite):
         self.input_enabled = True  # NEW
         self.name = name 
 
+        self.key_parts: set[int] = set()
+        self.has_master_key: bool = False
+
     def set_input_enabled(self, enabled: bool):  # NEW
         self.input_enabled = enabled
         if not enabled:
