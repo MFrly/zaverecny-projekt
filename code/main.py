@@ -8,6 +8,8 @@ from groups import AllSprites
 from menu import run_menu
 from pause_menu import PauseMenu
 
+from database import init_db, save_player, load_player
+
 from dialog_system import DialogSystem
 from network_system import NetworkSystem
 
@@ -24,6 +26,9 @@ class Game:
         self.running = True
         self.exit_to_menu = False
         self.player_name = player_name
+
+        # DB init
+        init_db()
 
         # GUI
         self.manager = pygame_gui.UIManager((WINDOW_WIDTH, WINDOW_HEIGHT))
@@ -51,10 +56,6 @@ class Game:
 
     # ---------- assety ----------
     def load_key_image(self) -> pygame.Surface:
-        """
-        Zkusí načíst obrázek klíče. Když soubor neexistuje,
-        vytvoří náhradní Surface, aby šlo testovat.
-        """
         path = join("data", "graphics", "items", "key_part.png")
         try:
             return pygame.image.load(path).convert_alpha()
@@ -66,6 +67,14 @@ class Game:
     # ---------- klíče ----------
     def spawn_keys(self):
         """Vytvoří 3 části klíče poblíž hráče (aby nebyly mimo hratelnou část)."""
+        # Když už má master key, nespawnuj nic
+        if getattr(self.player, "has_master_key", False):
+            return
+
+        # Když už má všechny 3 části, taky nespawnuj (ať se neduplikují)
+        if len(getattr(self.player, "key_parts", set())) >= 3:
+            return
+
         px, py = self.player.rect.center
 
         positions = [
@@ -73,10 +82,15 @@ class Game:
             (px + 300, py - 80),   # část 2
             (px + 100, py + 320),  # část 3
         ]
+
+        # spawnuj jen ty části, které hráč ještě nemá
+        already = getattr(self.player, "key_parts", set())
         for part_id, pos in enumerate(positions, start=1):
+            if part_id in already:
+                continue
             KeyPart(pos, part_id, self.key_img, [self.all_sprites, self.item_sprites])
 
-        print("Spawned key parts at:", [(k.part_id, k.rect.center) for k in self.item_sprites]) 
+        print("Spawned key parts at:", [(k.part_id, k.rect.center) for k in self.item_sprites])
 
     def check_key_pickup(self):
         """Kolize přes player.hitbox_rect (a key.hitbox_rect pokud existuje)."""
@@ -123,6 +137,27 @@ class Game:
             self.player.has_master_key = True
             self.player.key_parts.clear()
 
+            # když se složí klíč, smažeme případné zbývající itemy na mapě
+            for key in list(self.item_sprites):
+                key.kill()
+
+    # ---------- uložení / načtení ----------
+    def load_player_progress(self):
+        data = load_player(self.player_name)
+        if data:
+            self.player.key_parts = data["key_parts"]
+            self.player.has_master_key = data["has_master_key"]
+            print("Loaded player:", self.player_name, data)
+        else:
+            print("No save found for:", self.player_name)
+
+    def save_player_progress(self):
+        try:
+            save_player(self.player_name, self.player.key_parts, self.player.has_master_key)
+            print("Saved player:", self.player_name)
+        except Exception as e:
+            print("SAVE ERROR:", e)
+
     # ---------- svět / mapa ----------
     def setup(self):
         tmx = load_pygame(join("data", "maps", "world.tmx"))
@@ -152,16 +187,19 @@ class Game:
                     name=self.player_name,
                 )
 
-                # jistota (už to máš v Player, ale kdyby něco)
+                # jistota
                 if not hasattr(self.player, "key_parts"):
                     self.player.key_parts = set()
                 if not hasattr(self.player, "has_master_key"):
                     self.player.has_master_key = False
 
+                # načti progress z DB
+                self.load_player_progress()
+
                 npc_position = (obj.x, obj.y + 150)
                 self.npc = NPC(npc_position, (self.all_sprites, self.npc_sprites), npc_id="villager_1")
 
-                # klíče spawn až po hráči (jen jednou)
+                # klíče spawn až po hráči a až po loadu (aby se nespawnovaly duplicitně)
                 self.spawn_keys()
 
         if not player_spawned:
@@ -215,6 +253,8 @@ class Game:
 
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
+                    # uložit i při zavření okna
+                    self.save_player_progress()
                     self.running = False
                     self.exit_to_menu = False
 
@@ -224,7 +264,6 @@ class Game:
                         if not self.pause.is_open() and not self.dialog.is_active():
                             npc = self.player_near_npc()
                             if npc:
-                                # villager_1: dynamický dialog podle klíčů
                                 if npc.npc_id == "villager_1" and hasattr(self.dialog, "start_custom_dialog"):
                                     # nejdřív případně slož klíč, pak vyrob text
                                     self.try_craft_master_key()
@@ -258,10 +297,14 @@ class Game:
                         self.player.set_input_enabled(True)
 
                     elif action == "menu":
+                        # uložit při návratu do menu
+                        self.save_player_progress()
                         self.running = False
                         self.exit_to_menu = True
 
                     elif action == "quit":
+                        # uložit při quit
+                        self.save_player_progress()
                         self.running = False
                         self.exit_to_menu = False
 
@@ -290,7 +333,6 @@ class Game:
             # kreslení
             self.display_surface.fill("black")
             self.all_sprites.draw(self.player.rect.center)
-            
             self.draw_nameplates()
 
             if not self.pause.is_open():
@@ -299,6 +341,9 @@ class Game:
             self.pause.draw_overlay(self.display_surface)
             self.manager.draw_ui(self.display_surface)
             pygame.display.update()
+
+        # poslední save jako pojistka
+        self.save_player_progress()
 
         pygame.quit()
         self.net.shutdown()
