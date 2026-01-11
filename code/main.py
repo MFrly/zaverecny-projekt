@@ -155,76 +155,67 @@ class Game:
     # ---------- svět / mapa ----------
     def setup(self, map_path="data/maps/world.tmx"):
         # 1. Načtení mapy
-        tmx = load_pygame(join(map_path))
-        
-        # 2. Inicializace/Reset seznamů pro mapu
+        try:
+            tmx = load_pygame(join(map_path))
+        except Exception as e:
+            print(f"CHYBA: Nepodařilo se načíst mapu {map_path}: {e}")
+            return
+
+        # 2. Reset logiky
         self.enemy_spawn_positions = []
         self.exit_rects = []
-        
-        # 3. Vyčištění starých spritů (DŮLEŽITÉ při změně levelu)
-        # Smažeme vše kromě hráče, aby se mapy nekřížily
+        self.collision_sprites.empty()
+        self.item_sprites.empty()
+        self.npc_sprites.empty()
+
+        # 3. Vyčištění grafiky (ZACHOVÁNÍ OSTATNÍCH HRÁČŮ)
         for sprite in self.all_sprites:
-            if not hasattr(self, 'player') or sprite != self.player:
+            # Zjistíme, zda sprite patří některému ze vzdálených hráčů
+            is_remote = any(sprite == remote for remote in self.net.remote_players.values())
+            
+            # Smažeme jen pokud to není náš hráč A ZÁROVEŇ to není vzdálený hráč
+            if sprite != self.player and not is_remote:
                 sprite.kill()
 
-        # 4. Vykreslení dlaždic (Ground)
-        for x, y, image in tmx.get_layer_by_name("Ground").tiles():
-            Sprite((x * TILE_SIZE, y * TILE_SIZE), image, self.all_sprites)
+        # 4. Načtení vrstev
+        try:
+            for x, y, image in tmx.get_layer_by_name("Ground").tiles():
+                Sprite((x * TILE_SIZE, y * TILE_SIZE), image, self.all_sprites)
+        except ValueError: pass
 
-        # 5. Objekty s obrázkem a kolizí
-        for obj in tmx.get_layer_by_name("Objects"):
-            CollisionSprite((obj.x, obj.y), obj.image, (self.all_sprites, self.collision_sprites))
+        try:
+            for obj in tmx.get_layer_by_name("Objects"):
+                CollisionSprite((obj.x, obj.y), obj.image, (self.all_sprites, self.collision_sprites))
+        except ValueError: pass
 
-        # 6. Neviditelné kolizní hitboxy
-        for obj in tmx.get_layer_by_name("Collisions"):
-            CollisionSprite((obj.x, obj.y), pygame.Surface((obj.width, obj.height)), self.collision_sprites)
+        try:
+            for obj in tmx.get_layer_by_name("Collisions"):
+                CollisionSprite((obj.x, obj.y), pygame.Surface((obj.width, obj.height)), self.collision_sprites)
+        except ValueError: pass
 
-        # 7. Entity (Hráč, NPC, Klíče, Exity)
+        # 5. Entity (Hráč, NPC, atd.)
         player_spawned = False
-        for obj in tmx.get_layer_by_name("Entities"):
-            obj_name = str(obj.name).lower() if obj.name else ""
+        try:
+            for obj in tmx.get_layer_by_name("Entities"):
+                obj_name = str(obj.name).lower() if obj.name else ""
 
-            # Spawnování / Teleportace hráče
-            if obj_name == "player":
-                player_spawned = True
-                if hasattr(self, "player") and self.player:
-                    # Pokud hráč už existuje, jen ho přesuneme na start nové mapy
-                    self.player.rect.center = (obj.x, obj.y)
-                    self.player.hitbox_rect.center = (obj.x, obj.y)
-                else:
-                    # Pokud je to první start, vytvoříme ho
-                    self.player = Player(
-                        (obj.x, obj.y),
-                        self.all_sprites,
-                        self.collision_sprites,
-                        name=self.player_name,
-                    )
-                    self.player.key_parts = set()
-                    self.player.has_master_key = False
-                    self.load_player_progress()
+                if obj_name == "player":
+                    player_spawned = True
+                    if hasattr(self, "player") and self.player:
+                        self.player.rect.center = (obj.x, obj.y)
+                        self.player.hitbox_rect.center = (obj.x, obj.y)
+                    else:
+                        self.player = Player((obj.x, obj.y), self.all_sprites, self.collision_sprites, name=self.player_name)
+                        self.player.key_parts = set()
+                        self.player.has_master_key = False
+                        self.load_player_progress()
 
-            # Sběr bodů pro nepřátele (využijeme pro NPC a klíče)
-            elif obj_name == "enemy":
-                self.enemy_spawn_positions.append((obj.x, obj.y))
+                elif obj_name == "enemy":
+                    self.enemy_spawn_positions.append((obj.x, obj.y))
+        except ValueError: pass
 
-            # Načtení EXIT čtverců
-            elif obj_name == "exit":
-                rect = pygame.Rect(obj.x, obj.y, obj.width, obj.height)
-                self.exit_rects.append(rect)
-                print(f"DEBUG: Načten Exit na [{obj.x}, {obj.y}]")
-
-        # 8. Kontrola a rozmístění věcí na mapě
-        if not player_spawned:
-            raise RuntimeError(f"V mapě {map_path} chybí objekt 'Player'!")
-
-        if self.enemy_spawn_positions:
+        if player_spawned:
             self.spawn_entities_at_enemy_spots()
-        else:
-            # Nouzový spawn NPC, pokud v mapě nejsou žádné 'enemy' body
-            px, py = self.player.rect.center
-            self.npc = NPC((px, py + 150), (self.all_sprites, self.npc_sprites), npc_id="villager_1")
-            self.spawn_keys()
-        
     def change_level(self, new_map):
         print(f"Přechod do další úrovně: {new_map}")
         
@@ -311,10 +302,8 @@ class Game:
     # ---------- hlavní smyčka ----------
     def run(self):
         while self.running:
-            # 1. Časování
             dt = self.clock.tick(60) / 1000
 
-            # 2. Event Handling
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
                     self.save_player_progress()
@@ -322,36 +311,38 @@ class Game:
                     self.exit_to_menu = False
 
                 if event.type == pygame.KEYDOWN:
-                    # E = Interakce s NPC
+                    # E = Interakce
                     if event.key == pygame.K_e:
                         if not self.pause.is_open() and not self.dialog.is_active():
                             npc = self.player_near_npc()
                             if npc:
                                 if npc.npc_id == "villager_1":
-                                    # Pokus o složení klíče a spuštění dialogu
                                     self.try_craft_master_key()
                                     lines = self.get_npc_key_dialog_lines()
                                     self.dialog.start_custom_dialog(self.player, lines)
                                 else:
                                     self.dialog.start_dialog(self.player, npc)
 
-                    # ENTER = Další věta dialogu
+                    # ENTER = Další dialog
                     if event.key == pygame.K_RETURN and self.dialog.is_active():
                         self.dialog.next_dialog(self.player)
 
-                    # --- NOVÁ LOGIKA PRO TELEPORT PŘES NPC ---
+                    # --- LOGIKA TELEPORTU (Y/N) ---
                     if self.dialog.is_active() and getattr(self.player, "has_master_key", False):
-                        if event.key == pygame.K_y: # Y = YES (ANO)
-                            print("Hráč potvrdil teleport do Levelu 2")
-                            self.dialog.active = False # Zavřeme dialogové okno
-                            self.player.set_input_enabled(True) # Odblokujeme pohyb
-                            self.setup("data/maps/l2_world.tmx") # Načteme novou mapu
-                        
-                        elif event.key == pygame.K_n: # N = NO (NE)
-                            print("Hráč odmítl teleport")
+                        if event.key == pygame.K_y:
+                            print("Teleportuji do Levelu 2...")
                             self.dialog.active = False
                             self.player.set_input_enabled(True)
-                    # -----------------------------------------
+                            
+                            # Načtení nové mapy
+                            self.setup("data/maps/l2_world.tmx")
+                            
+                            # OKAMŽITÁ SYNCHRONIZACE: Oznámíme serveru novou pozici v nové mapě
+                            self.net.tick(self.player)
+                        
+                        elif event.key == pygame.K_n:
+                            self.dialog.active = False
+                            self.player.set_input_enabled(True)
 
                     # ESC = Pauza
                     if event.key == pygame.K_ESCAPE:
@@ -362,8 +353,9 @@ class Game:
                             self.pause.open()
                             self.player.set_input_enabled(False)
 
-                # UI a Pauza akce
                 self.manager.process_events(event)
+
+                # Pauza akce
                 if self.pause.is_open():
                     action = self.pause.process_event(event)
                     if action == "resume":
@@ -378,18 +370,21 @@ class Game:
                         if name == "coop_host": self.net.host(); self.pause.close(); self.player.set_input_enabled(True)
                         elif name == "coop_join": self.net.join(payload or "127.0.0.1"); self.pause.close(); self.player.set_input_enabled(True)
 
-            # 3. Update Logika
+            # --- UPDATE ---
             if not self.pause.is_open() and not self.dialog.is_active():
                 self.net.tick(self.player)
                 self.all_sprites.update(dt)
                 self.check_key_pickup()
-                # self.check_exit()  <-- Toto jsme smazali, nyní řeší NPC přes [Y]
 
             self.manager.update(dt)
 
-            # 4. Kreslení
+            # --- KRESLENÍ ---
             self.display_surface.fill("black")
+            
+            # Vykreslení světa centrovaného na hráče
             self.all_sprites.draw(self.player.rect.center)
+            
+            # Vykreslení jmenovek (pro nás i vzdálené hráče)
             self.draw_nameplates()
 
             if not self.pause.is_open():
@@ -399,7 +394,6 @@ class Game:
             self.manager.draw_ui(self.display_surface)
             pygame.display.update()
 
-        # 5. Ukončení
         self.save_player_progress()
         self.net.shutdown()
         pygame.quit()
