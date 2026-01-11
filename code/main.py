@@ -121,15 +121,9 @@ class Game:
             ]
 
         if have < 3:
-            return [
-                f"Už máš {have}/3 části klíče.",
-                f"Ještě ti chybí {missing}."
-            ]
+            return [f"Už máš {have}/3 části klíče. Najdi zbytek!"]
 
-        return [
-            "Skvěle! Máš všechny tři části!",
-            "Spojím je v jeden klíč..."
-        ]
+        return ["Skvěle! Máš všechno. Spojím ti je v Master Key! Znovu se mnou promluv."]
 
     def try_craft_master_key(self):
         """Když má hráč 3 části a mluví s NPC, složíme klíč."""
@@ -159,52 +153,120 @@ class Game:
             print("SAVE ERROR:", e)
 
     # ---------- svět / mapa ----------
-    def setup(self):
-        tmx = load_pygame(join("data", "maps", "world.tmx"))
+    def setup(self, map_path="data/maps/world.tmx"):
+        # 1. Načtení mapy
+        tmx = load_pygame(join(map_path))
+        
+        # 2. Inicializace/Reset seznamů pro mapu
+        self.enemy_spawn_positions = []
+        self.exit_rects = []
+        
+        # 3. Vyčištění starých spritů (DŮLEŽITÉ při změně levelu)
+        # Smažeme vše kromě hráče, aby se mapy nekřížily
+        for sprite in self.all_sprites:
+            if not hasattr(self, 'player') or sprite != self.player:
+                sprite.kill()
 
-        # Tiles
+        # 4. Vykreslení dlaždic (Ground)
         for x, y, image in tmx.get_layer_by_name("Ground").tiles():
             Sprite((x * TILE_SIZE, y * TILE_SIZE), image, self.all_sprites)
 
-        # Objects (kolizní sprity s obrázkem)
+        # 5. Objekty s obrázkem a kolizí
         for obj in tmx.get_layer_by_name("Objects"):
             CollisionSprite((obj.x, obj.y), obj.image, (self.all_sprites, self.collision_sprites))
 
-        # Collisions (neviditelné hitboxy)
+        # 6. Neviditelné kolizní hitboxy
         for obj in tmx.get_layer_by_name("Collisions"):
             CollisionSprite((obj.x, obj.y), pygame.Surface((obj.width, obj.height)), self.collision_sprites)
 
-        # Entities
+        # 7. Entity (Hráč, NPC, Klíče, Exity)
         player_spawned = False
         for obj in tmx.get_layer_by_name("Entities"):
-            if obj.name == "Player":
+            obj_name = str(obj.name).lower() if obj.name else ""
+
+            # Spawnování / Teleportace hráče
+            if obj_name == "player":
                 player_spawned = True
-
-                self.player = Player(
-                    (obj.x, obj.y),
-                    self.all_sprites,
-                    self.collision_sprites,
-                    name=self.player_name,
-                )
-
-                # jistota
-                if not hasattr(self.player, "key_parts"):
+                if hasattr(self, "player") and self.player:
+                    # Pokud hráč už existuje, jen ho přesuneme na start nové mapy
+                    self.player.rect.center = (obj.x, obj.y)
+                    self.player.hitbox_rect.center = (obj.x, obj.y)
+                else:
+                    # Pokud je to první start, vytvoříme ho
+                    self.player = Player(
+                        (obj.x, obj.y),
+                        self.all_sprites,
+                        self.collision_sprites,
+                        name=self.player_name,
+                    )
                     self.player.key_parts = set()
-                if not hasattr(self.player, "has_master_key"):
                     self.player.has_master_key = False
+                    self.load_player_progress()
 
-                # načti progress z DB
-                self.load_player_progress()
+            # Sběr bodů pro nepřátele (využijeme pro NPC a klíče)
+            elif obj_name == "enemy":
+                self.enemy_spawn_positions.append((obj.x, obj.y))
 
-                npc_position = (obj.x, obj.y + 150)
-                self.npc = NPC(npc_position, (self.all_sprites, self.npc_sprites), npc_id="villager_1")
+            # Načtení EXIT čtverců
+            elif obj_name == "exit":
+                rect = pygame.Rect(obj.x, obj.y, obj.width, obj.height)
+                self.exit_rects.append(rect)
+                print(f"DEBUG: Načten Exit na [{obj.x}, {obj.y}]")
 
-                # klíče spawn až po hráči a až po loadu (aby se nespawnovaly duplicitně)
-                self.spawn_keys()
-
+        # 8. Kontrola a rozmístění věcí na mapě
         if not player_spawned:
-            raise RuntimeError("V layeru 'Entities' chybí objekt s name == 'Player'.")
+            raise RuntimeError(f"V mapě {map_path} chybí objekt 'Player'!")
 
+        if self.enemy_spawn_positions:
+            self.spawn_entities_at_enemy_spots()
+        else:
+            # Nouzový spawn NPC, pokud v mapě nejsou žádné 'enemy' body
+            px, py = self.player.rect.center
+            self.npc = NPC((px, py + 150), (self.all_sprites, self.npc_sprites), npc_id="villager_1")
+            self.spawn_keys()
+        
+    def change_level(self, new_map):
+        print(f"Přechod do další úrovně: {new_map}")
+        
+        # 1. Vyčistíme všechny sprity kromě síťových entit (pokud chceš zachovat připojení)
+        for sprite in self.all_sprites:
+            sprite.kill()
+        
+        # 2. Znovu zavoláme setup s novou cestou k mapě
+        # Ujisti se, že setup přijímá parametr map_path
+        self.setup(new_map)
+
+    def spawn_entities_at_enemy_spots(self):
+        import random
+        # Zamícháme seznam pozic, aby to bylo pokaždé jinak
+        spots = self.enemy_spawn_positions.copy()
+        random.shuffle(spots)
+
+        # 1. Spawn NPC na první náhodný spot
+        npc_pos = spots.pop(0)
+        self.npc = NPC(npc_pos, (self.all_sprites, self.npc_sprites), npc_id="villager_1")
+
+        # 2. Spawn zbývajících klíčů na další spoty
+        # Zjistíme, které části klíče hráč ještě NEMÁ
+        already_have = getattr(self.player, "key_parts", set())
+        needed_ids = [1, 2, 3]
+        for part_id in already_have:
+            if part_id in needed_ids:
+                needed_ids.remove(part_id)
+
+        # Pokud hráč už má Master Key, nepotřebuje žádné části
+        if getattr(self.player, "has_master_key", False):
+            needed_ids = []
+
+        # Rozmístíme klíče na zbývající spoty
+        for part_id in needed_ids:
+            if spots:
+                pos = spots.pop(0)
+                KeyPart(pos, part_id, self.key_img, [self.all_sprites, self.item_sprites])
+            else:
+                print(f"Nedostatek 'Enemy' bodů v mapě pro spawn klíče {part_id}")
+
+        print(f"Rozmístěno na 'Enemy' body: NPC na {npc_pos}, klíče na zbývající body.")
     # ---------- NPC blízkost ----------
     def player_near_npc(self):
         for npc in self.npc_sprites:
@@ -249,34 +311,49 @@ class Game:
     # ---------- hlavní smyčka ----------
     def run(self):
         while self.running:
+            # 1. Časování
             dt = self.clock.tick(60) / 1000
 
+            # 2. Event Handling
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
-                    # uložit i při zavření okna
                     self.save_player_progress()
                     self.running = False
                     self.exit_to_menu = False
 
                 if event.type == pygame.KEYDOWN:
-                    # E = start NPC dialog
+                    # E = Interakce s NPC
                     if event.key == pygame.K_e:
                         if not self.pause.is_open() and not self.dialog.is_active():
                             npc = self.player_near_npc()
                             if npc:
-                                if npc.npc_id == "villager_1" and hasattr(self.dialog, "start_custom_dialog"):
-                                    # nejdřív případně slož klíč, pak vyrob text
+                                if npc.npc_id == "villager_1":
+                                    # Pokus o složení klíče a spuštění dialogu
                                     self.try_craft_master_key()
                                     lines = self.get_npc_key_dialog_lines()
                                     self.dialog.start_custom_dialog(self.player, lines)
                                 else:
                                     self.dialog.start_dialog(self.player, npc)
 
-                    # Enter = další věta dialogu
+                    # ENTER = Další věta dialogu
                     if event.key == pygame.K_RETURN and self.dialog.is_active():
                         self.dialog.next_dialog(self.player)
 
-                    # ESC = pauza
+                    # --- NOVÁ LOGIKA PRO TELEPORT PŘES NPC ---
+                    if self.dialog.is_active() and getattr(self.player, "has_master_key", False):
+                        if event.key == pygame.K_y: # Y = YES (ANO)
+                            print("Hráč potvrdil teleport do Levelu 2")
+                            self.dialog.active = False # Zavřeme dialogové okno
+                            self.player.set_input_enabled(True) # Odblokujeme pohyb
+                            self.setup("data/maps/l2_world.tmx") # Načteme novou mapu
+                        
+                        elif event.key == pygame.K_n: # N = NO (NE)
+                            print("Hráč odmítl teleport")
+                            self.dialog.active = False
+                            self.player.set_input_enabled(True)
+                    # -----------------------------------------
+
+                    # ESC = Pauza
                     if event.key == pygame.K_ESCAPE:
                         if self.pause.is_open():
                             self.pause.close()
@@ -285,52 +362,32 @@ class Game:
                             self.pause.open()
                             self.player.set_input_enabled(False)
 
-                # UI
+                # UI a Pauza akce
                 self.manager.process_events(event)
-
-                # Pauza – akce
                 if self.pause.is_open():
                     action = self.pause.process_event(event)
-
                     if action == "resume":
                         self.pause.close()
                         self.player.set_input_enabled(True)
-
                     elif action == "menu":
-                        # uložit při návratu do menu
-                        self.save_player_progress()
-                        self.running = False
-                        self.exit_to_menu = True
-
+                        self.save_player_progress(); self.running = False; self.exit_to_menu = True
                     elif action == "quit":
-                        # uložit při quit
-                        self.save_player_progress()
-                        self.running = False
-                        self.exit_to_menu = False
-
+                        self.save_player_progress(); self.running = False; self.exit_to_menu = False
                     elif isinstance(action, tuple):
                         name, payload = action
+                        if name == "coop_host": self.net.host(); self.pause.close(); self.player.set_input_enabled(True)
+                        elif name == "coop_join": self.net.join(payload or "127.0.0.1"); self.pause.close(); self.player.set_input_enabled(True)
 
-                        if name == "coop_host":
-                            self.net.host()
-                            self.pause.close()
-                            self.player.set_input_enabled(True)
-
-                        elif name == "coop_join":
-                            ip = payload or "127.0.0.1"
-                            self.net.join(ip)
-                            self.pause.close()
-                            self.player.set_input_enabled(True)
-
-            # update jen mimo pauzu a dialog
+            # 3. Update Logika
             if not self.pause.is_open() and not self.dialog.is_active():
                 self.net.tick(self.player)
                 self.all_sprites.update(dt)
                 self.check_key_pickup()
+                # self.check_exit()  <-- Toto jsme smazali, nyní řeší NPC přes [Y]
 
             self.manager.update(dt)
 
-            # kreslení
+            # 4. Kreslení
             self.display_surface.fill("black")
             self.all_sprites.draw(self.player.rect.center)
             self.draw_nameplates()
@@ -342,27 +399,42 @@ class Game:
             self.manager.draw_ui(self.display_surface)
             pygame.display.update()
 
-        # poslední save jako pojistka
+        # 5. Ukončení
         self.save_player_progress()
-
-        pygame.quit()
         self.net.shutdown()
-
+        pygame.quit()
 
 if __name__ == "__main__":
     running = True
     while running:
-        choice = run_menu()
-        if not isinstance(choice, dict):
+        # 1. Spustíme menu a získáme data (akce, jméno, ip)
+        choice = run_menu() 
+        
+        # Pokud menu vrátí quit nebo nic, ukončíme aplikaci
+        if not choice or choice.get("action") == "quit":
             break
 
         player_name = choice.get("player_name", "Hráč")
         action = choice.get("action")
-        if action in ("quit", None):
-            break
+        target_ip = choice.get("ip", "127.0.0.1")
 
+        # 2. Vytvoříme instanci hry
         game = Game(player_name)
+
+        # 3. REAKCE NA VOLBU Z MENU
+        if action == "coop_host":
+            game.net.host()  # Spustí server i klienta
+        elif action == "coop_join":
+            game.net.join(target_ip)  # Připojí se k zadané IP
+        elif action == "load":
+            # Pokud máš metodu load_player_progress, můžeš ji vynutit zde
+            # ale většinou ji volá setup() automaticky
+            pass
+
+        # 4. Spuštění samotné herní smyčky
         game.run()
 
-        if not game.exit_to_menu:
+        # Pokud hráč vyskočil do menu (exit_to_menu), smyčka while running 
+        # se zopakuje a znovu ukáže menu. Pokud zavřel křížkem, running bude False.
+        if not getattr(game, "exit_to_menu", False):
             running = False

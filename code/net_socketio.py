@@ -27,6 +27,7 @@ class CoopServer:
                 p = self.players[sid]
                 p["x"] = int(data.get("x", 0))
                 p["y"] = int(data.get("y", 0))
+                p["status"] = data.get("status", "down")  # Přidáme status
                 self._broadcast_state()
 
         @self.sio.event

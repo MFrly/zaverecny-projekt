@@ -25,22 +25,25 @@ class NetworkSystem:
         self.remote_players.clear()
 
     def host(self):
-        print("CO-OP: HOST – spouštím server i lokální klient")
+        print("SÍŤ: Spouštím HOST režim...")
         self.shutdown()
         self.server = CoopServer()
         self.server.start()
-        time.sleep(0.3)
+        # Malá pauza, aby server stihl naskočit, než se k němu klient připojí
+        time.sleep(0.5) 
         self.client = CoopClient("http://127.0.0.1:5001")
         self.client.start()
 
     def join(self, ip: str):
-        print(f"CO-OP: JOIN {ip}")
+        print(f"SÍŤ: Připojuji se k {ip}...")
         self.shutdown()
-        self.client = CoopClient(f"http://{ip}:5001")
+        # Pokud uživatel nezadal IP, zkusíme localhost
+        target_ip = ip if ip else "127.0.0.1"
+        self.client = CoopClient(f"http://{target_ip}:5001")
         self.client.start()
 
     def tick(self, player):
-        # příjem
+        # příjem dat od ostatních
         if self.client:
             for msg in self.client.get_messages():
                 if msg.get("type") == "state":
@@ -60,20 +63,40 @@ class NetworkSystem:
                             continue
 
                         x, y = int(p.get("x", 0)), int(p.get("y", 0))
+                        status = p.get("status", "down") # <-- Změna zde: získáme směr z dat
+
                         if pid not in self.remote_players:
                             self.remote_players[pid] = RemotePlayer(pid, (x, y), self.all_sprites)
                         else:
-                            self.remote_players[pid].set_pos(x, y)
+                            # Změna zde: voláme set_state místo set_pos, aby se spustila animace
+                            self.remote_players[pid].set_state(x, y, status)
 
-                    # odstraň zmizelé
+                    # odstraň zmizelé hráče
                     for pid in list(self.remote_players.keys()):
                         if pid not in alive or (my_id is not None and pid == my_id):
                             self.remote_players[pid].kill()
                             del self.remote_players[pid]
+
+        # odesílání tvých dat na server
+        if self.client and player is not None:
+            now = time.time()
+            if now - self.last_send >= self.send_rate:
+                self.last_send = now
+                # Změna zde: do balíčku přidáme tvůj aktuální status (směr)
+                self.client.sio.emit('move', {
+                    'x': player.hitbox_rect.centerx,
+                    'y': player.hitbox_rect.centery,
+                    'status': player.status
+                })
 
         # odesílání
         if self.client and player is not None:
             now = time.time()
             if now - self.last_send >= self.send_rate:
                 self.last_send = now
-                self.client.send_pos(player.rect.centerx, player.rect.centery)
+        # Přidáme status do odesílaných dat
+                self.client.sio.emit('move', {
+                'x': player.hitbox_rect.centerx,
+                'y': player.hitbox_rect.centery,
+                'status': player.status  # TADY přidáváme informaci o animaci
+                })
